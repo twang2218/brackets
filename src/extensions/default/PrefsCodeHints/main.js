@@ -1,24 +1,24 @@
 /*
- * Copyright (c) 2015 Adobe Systems Incorporated. All rights reserved.
- *  
+ * Copyright (c) 2015 - present Adobe Systems Incorporated. All rights reserved.
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"), 
- * to deal in the Software without restriction, including without limitation 
- * the rights to use, copy, modify, merge, publish, distribute, sublicense, 
- * and/or sell copies of the Software, and to permit persons to whom the 
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
  * Software is furnished to do so, subject to the following conditions:
- *  
+ *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *  
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING 
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER 
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
- * 
+ *
  */
 
 /*jslint vars: true, plusplus: true, devel: true, nomen: true, indent: 4, maxerr: 50 */
@@ -26,7 +26,7 @@
 
 define(function (require, exports, module) {
     "use strict";
-    
+
     // Load dependencies.
     var AppInit             = brackets.getModule("utils/AppInit"),
         CodeHintManager     = brackets.getModule("editor/CodeHintManager"),
@@ -38,33 +38,46 @@ define(function (require, exports, module) {
         JSONUtils           = brackets.getModule("language/JSONUtils"),
         Strings             = brackets.getModule("strings"),
         ThemeManager        = brackets.getModule("view/ThemeManager"),
+        CodeInspection      = brackets.getModule("language/CodeInspection"),
         _                   = brackets.getModule("thirdparty/lodash"),
-        data                = JSON.parse(require("text!data.json")),
+        languages           = LanguageManager.getLanguages(),
         isPrefDocument      = false,
         isPrefHintsEnabled  = false;
-    
+
+    // Stores data of preferences used by Brackets and its core/thirdparty extensions.
+    var data = {
+        language: {
+            type: "object",
+            description: Strings.DESCRIPTION_LANGUAGE
+        },
+        path: {
+            type: "object",
+            description: Strings.DESCRIPTION_PATH
+        }
+    };
+
     var stringMatcherOptions = {
         preferPrefixMatches: true
     };
-    
+
     // List of parent keys for which no key hints will be provided.
     var parentKeyBlacklist = [
         "language.fileExtensions",
         "language.fileNames",
         "path"
     ];
-    
+
     // Define a preference for code hinting.
     PreferencesManager.definePreference("codehint.PrefHints", "boolean", true, {
         description: Strings.DESCRIPTION_PREF_HINTS
     });
-    
+
     /**
      * @private
      *
      * Determines whether or not the current document is a preferences document and
      * user has enabled code hints
-     * 
+     *
      * @return {Boolean}
      */
     function _isPrefHintsEnabled() {
@@ -72,7 +85,7 @@ define(function (require, exports, module) {
                 PreferencesManager.get("showCodeHints") !== false &&
                 PreferencesManager.get("codehint.PrefHints") !== false);
     }
-    
+
     /**
      * @private
      *
@@ -84,8 +97,8 @@ define(function (require, exports, module) {
     function _isPrefDocument(document) {
         return (/^\.?brackets\.json$/).test(document.file._name);
     }
-    
-    // Set listeners on preference and editor changes.
+
+    // Set listeners on preference, editor and language changes.
     PreferencesManager.on("change", "showCodeHints", function () {
         isPrefHintsEnabled = _isPrefHintsEnabled();
     });
@@ -98,22 +111,25 @@ define(function (require, exports, module) {
         }
         isPrefHintsEnabled = _isPrefHintsEnabled();
     });
-    
+    LanguageManager.on("languageAdded", function () {
+        languages = LanguageManager.getLanguages();
+    });
+
     /*
      * Returns a sorted and formatted list of hints with the query substring
      * highlighted.
-     * 
+     *
      * @param {Array.<Object>} hints - the list of hints to format
      * @param {string} query - querystring used for highlighting matched
      *      portions of each hint
      * @return {Array.jQuery} sorted Array of jQuery DOM elements to insert
      */
     function formatHints(hints, query) {
-        
+
         var hasMetadata = hints.some(function (token) {
             return token.type || token.description;
         });
-        
+
         StringMatch.basicMatchSort(hints);
         return hints.map(function (token) {
             var $hintItem = $("<span>").addClass("brackets-pref-hints"),
@@ -133,9 +149,9 @@ define(function (require, exports, module) {
             } else {
                 $hintObj.text(token.value);
             }
-            
+
             $hintItem.append($hintObj);
-            
+
             if (hasMetadata) {
                 $hintItem.data("type", token.type);
                 if (token.description) {
@@ -147,7 +163,7 @@ define(function (require, exports, module) {
             return $hintItem;
         });
     }
-    
+
     /**
      * @constructor
      */
@@ -163,22 +179,17 @@ define(function (require, exports, module) {
                 return;
             }
             data[pref] = $.extend(data[pref], preference);
-            
+
             // If child keys found, add them.
             if (preference.keys) {
                 data[pref].keys = _.clone(preference.keys);
             }
         });
-        
-        // Add installed themes to code hints.
-        data["themes.theme"].values = ThemeManager.getAllThemes().map(function (theme) {
-            return theme.name;
-        });
     }
-    
+
     /**
      * Determines whether or not hints are available in the current context
-     * 
+     *
      * @param {!Editor} editor
      * @param {String} implicitChar
      * @return {Boolean}
@@ -187,7 +198,7 @@ define(function (require, exports, module) {
         if (isPrefHintsEnabled && editor.getModeForSelection() === "application/json") {
             this.editor = editor;
             this.ctxInfo = JSONUtils.getContextInfo(this.editor, this.editor.getCursorPos(), true);
-            
+
             if (this.ctxInfo && this.ctxInfo.tokenType) {
                 // Disallow hints for blacklisted keys.
                 if (this.ctxInfo.tokenType === JSONUtils.TOKEN_KEY &&
@@ -199,50 +210,50 @@ define(function (require, exports, module) {
         }
         return false;
     };
-    
+
     /**
      * Returns a list of hints available in the current context
-     * 
+     *
      * @param {String} implicitChar
      * @return {!{hints: Array.<jQueryObject>, match: string, selectInitial: boolean, handleWideResults: boolean}}
      */
     PrefsCodeHints.prototype.getHints = function (implicitChar) {
         var hints = [], ctxInfo, query, keys, values, option = {type: null, description: null, values: null};
-        
+
         ctxInfo = this.ctxInfo = JSONUtils.getContextInfo(this.editor, this.editor.getCursorPos(), true);
-        
+
         if (ctxInfo && ctxInfo.token) {
             query = JSONUtils.stripQuotes(ctxInfo.token.string.substr(0, ctxInfo.offset)).trim();
             if (JSONUtils.regexAllowedChars.test(query)) {
                 query = "";
             }
-            
+
             if (ctxInfo.tokenType === JSONUtils.TOKEN_KEY) {
                 // Provide hints for keys
-                
+
                 // Get options for parent key else use general options.
                 if (data[ctxInfo.parentKeyName] && data[ctxInfo.parentKeyName].keys) {
                     keys = data[ctxInfo.parentKeyName].keys;
                 } else if (ctxInfo.parentKeyName === "language") {
-                    keys = LanguageManager.getLanguages();
+                    keys = languages;
                     option.type = "object";
                 } else {
                     keys = data;
                 }
-            
+
                 hints = $.map(Object.keys(keys), function (key) {
                     if (ctxInfo.exclusionList.indexOf(key) === -1) {
                         var match = StringMatch.stringMatch(key, query, stringMatcherOptions);
                         if (match) {
                             match.type = keys[key].type || option.type;
-                            match.description = keys[key].description || Strings[keys[key].string] || null;
+                            match.description = keys[key].description || null;
                             return match;
                         }
                     }
                 });
             } else if (ctxInfo.tokenType === JSONUtils.TOKEN_VALUE) {
                 // Provide hints for values.
-                
+
                 // Get the key from data.
                 if (data[ctxInfo.parentKeyName] && data[ctxInfo.parentKeyName].keys &&
                         data[ctxInfo.parentKeyName].keys[ctxInfo.keyName]) {
@@ -250,31 +261,44 @@ define(function (require, exports, module) {
                 } else if (data[ctxInfo.keyName]) {
                     option = data[ctxInfo.keyName];
                 }
-                
+
                 // Get the values depending on the selected key.
                 if (option && option.type === "boolean") {
                     values = ["false", "true"];
                 } else if (option && option.values && (["number", "string"].indexOf(option.type) !== -1 ||
                                                        (option.type === "array" && ctxInfo.isArray))) {
                     values = option.values;
+                } else if (ctxInfo.isArray && ctxInfo.keyName === "linting.prefer" && languages[ctxInfo.parentKeyName]) {
+                    values = CodeInspection.getProviderIDsForLanguage(ctxInfo.parentKeyName);
+                } else if (ctxInfo.keyName === "themes.theme") {
+                    values = ThemeManager.getAllThemes().map(function (theme) {
+                        return theme.name;
+                    });
                 } else if (ctxInfo.parentKeyName === "language.fileExtensions" ||
                            ctxInfo.parentKeyName === "language.fileNames") {
-                    values = Object.keys(LanguageManager.getLanguages());
+                    values = Object.keys(languages);
                 } else {
                     return null;
                 }
-                
+
+                // Convert integers to strings, so StringMatch.stringMatch can match it.
+                if (option.type === "number" || option.valueType === "number") {
+                    values = values.map(function (val) {
+                        return val.toString();
+                    });
+                }
+
                 // filter through the values.
                 hints = $.map(values, function (value) {
                     var match = StringMatch.stringMatch(value, query, stringMatcherOptions);
                     if (match) {
                         match.type = option.valueType || option.type;
-                        match.description = Strings[option.string] || option.description || null;
+                        match.description = option.description || null;
                         return match;
                     }
                 });
             }
-            
+
             return {
                 hints: formatHints(hints, query),
                 match: null,
@@ -284,10 +308,10 @@ define(function (require, exports, module) {
         }
         return null;
     };
-    
+
     /**
      * Inserts a completion at current position
-     * 
+     *
      * @param {!String} completion
      * @return {Boolean}
      */
@@ -305,42 +329,41 @@ define(function (require, exports, module) {
             completion = completion.find(".hint-obj").text();
         }
         start.line = end.line = pos.line;
-        
+
         if (ctxInfo.tokenType === JSONUtils.TOKEN_KEY) {
             startChar = ctxInfo.token.string.charAt(0);
-            
+
             // Get the quote char.
             if (/^['"]$/.test(startChar)) {
                 quoteChar = startChar;
             }
-            
+
             // Put quotes around completion.
-            completion = quoteChar + completion;
-            completion = completion + quoteChar;
-            
+            completion = quoteChar + completion + quoteChar;
+
             // Append colon and braces, brackets and quotes.
             if (!ctxInfo.shouldReplace) {
                 completion += ": ";
-                
+
                 switch (type) {
                 case "object":
                     completion += "{}";
                     break;
-                        
+
                 case "array":
                     completion += "[]";
                     break;
-                    
+
                 case "string":
                     completion += "\"\"";
                     break;
                 }
             }
-            
+
             start.ch = pos.ch - ctxInfo.offset;
             end.ch = ctxInfo.token.end;
             this.editor.document.replaceRange(completion, start, end);
-            
+
             // Place cursor inside the braces, brackets or quotes.
             if (["object", "array", "string"].indexOf(type) !== -1) {
                 this.editor.setCursorPos(start.line, start.ch + completion.length - 1);
@@ -363,7 +386,7 @@ define(function (require, exports, module) {
                 start.ch = pos.ch - ctxInfo.offset;
                 end.ch = ctxInfo.token.end;
             }
-            
+
             if (!type || type === "string") {
                 startChar = ctxInfo.token.string.charAt(0);
                 if (/^['"]$/.test(startChar)) {
@@ -373,7 +396,7 @@ define(function (require, exports, module) {
                 }
                 completion = quoteChar + completion + quoteChar;
             }
-            
+
             this.editor.document.replaceRange(completion, start, end);
             return false;
         }
@@ -399,7 +422,7 @@ define(function (require, exports, module) {
         var hintProvider = new PrefsCodeHints();
         CodeHintManager.registerHintProvider(hintProvider, ["json"], 0);
         ExtensionUtils.loadStyleSheet(module, "styles/brackets-prefs-hints.css");
-        
+
         // For unit tests only.
         exports.hintProvider            = hintProvider;
         exports._setupTestEnvironment   = _setupTestEnvironment;
